@@ -14,9 +14,9 @@
     "tailwindcss 4",
     "ui kit"
   ],
-  "homepage": "https://github.com/LoranRendel/versoly-ui-tailwind4#readme",
+  "homepage": "https://github.com/LoranRendel/versoly-ui#readme",
   "bugs": {
-    "url": "https://github.com/LoranRendel/versoly-ui-tailwind4/issues"
+    "url": "https://github.com/LoranRendel/versoly-ui/issues"
   },
   "license": "MIT",
   "author": "Versoly",
@@ -26,7 +26,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/LoranRendel/versoly-ui-tailwind4.git"
+    "url": "git+https://github.com/LoranRendel/versoly-ui.git"
   },
   "type": "module",
   "main": "./dist/versoly-ui.cjs",
