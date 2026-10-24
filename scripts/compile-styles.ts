@@ -35,8 +35,55 @@ const compileCss = async (css: string, candidates: string[] = []) => {
   return postcss.parse(compiler.build(candidates));
 };
 
-/** CSS nodes → CSS-in-JS. Repeated keys become arrays, which Tailwind turns back into repeated declarations / rules. */
-const toObject = (nodes: ChildNode[] = []): CssInJs => {
+/** Splits a selector list on its top-level commas: `a, :where(b, c)` → `a`, `:where(b, c)`. */
+const splitSelector = (selector: string) => {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < selector.length; i++) {
+    const char = selector[i];
+    if (char === "(" || char === "[") {
+      depth++;
+    } else if (char === ")" || char === "]") {
+      depth--;
+    } else if (char === "," && depth === 0) {
+      parts.push(selector.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(selector.slice(start).trim());
+  return parts;
+};
+
+/**
+ * A compiled rule's selector relative to the component's one. When a rule is nothing but variants, Tailwind moves
+ * them out of it: `.tr { @apply even:bg-gray-100 }` compiles to `.tr:nth-child(even) { … }`, nested back as
+ * `&:nth-child(even)`. Relative, because the plugin splits the selector list between `addBase` and `addComponents`.
+ */
+const nest = (selector: string, compiled: string) => {
+  // already nested: `&:hover`, `:where(& > :not(:last-child))`
+  if (compiled.includes("&")) {
+    return compiled;
+  }
+  const parts = splitSelector(selector);
+  const compiledParts = splitSelector(compiled);
+  const suffixes = compiledParts.map((part, i) => {
+    const base = parts[i];
+    return base !== undefined && part.startsWith(base) ? part.slice(base.length) : undefined;
+  });
+  const [suffix] = suffixes;
+  if (compiledParts.length !== parts.length || suffix === undefined || suffixes.some((other) => other !== suffix)) {
+    throw new Error(`[versoly-ui] "${compiled}" can't be nested in "${selector}"`);
+  }
+  return `&${suffix}`;
+};
+
+/**
+ * CSS nodes → CSS-in-JS. Repeated keys become arrays, which Tailwind turns back into repeated declarations / rules.
+ * With `selector`, the nodes are that rule's compiled output: its own declarations are inlined and every other rule,
+ * also inside at-rules like `@media (hover: hover) { .tr:hover { … } }`, is nested relative to it.
+ */
+const toObject = (nodes: ChildNode[] = [], selector?: string): CssInJs => {
   const css: CssInJs = {};
   const add = (key: string, value: string | CssInJs) => {
     const current = css[key];
@@ -47,15 +94,24 @@ const toObject = (nodes: ChildNode[] = []): CssInJs => {
     }
   };
 
-  for (const node of nodes) {
-    if (node.type === "decl") {
-      add(node.prop, node.important ? `${node.value} !important` : node.value);
-    } else if (node.type === "rule") {
-      add(node.selector, toObject(node.nodes));
-    } else if (node.type === "atrule") {
-      add(`@${node.name} ${node.params}`, toObject(node.nodes));
+  const walk = (nodes: ChildNode[] = []) => {
+    for (const node of nodes) {
+      if (node.type === "decl") {
+        add(node.prop, node.important ? `${node.value} !important` : node.value);
+      } else if (node.type === "rule") {
+        if (selector === undefined) {
+          add(node.selector, toObject(node.nodes));
+        } else if (node.selector === selector) {
+          walk(node.nodes);
+        } else {
+          add(nest(selector, node.selector), toObject(node.nodes));
+        }
+      } else if (node.type === "atrule") {
+        add(`@${node.name} ${node.params}`, toObject(node.nodes, selector));
+      }
     }
-  }
+  };
+  walk(nodes);
   return css;
 };
 
@@ -92,7 +148,7 @@ const compileComponent = async (name: ComponentName): Promise<CompiledComponent>
     return {
       selector,
       layer,
-      css: toObject(marker.nodes?.flatMap((node) => (node.type === "rule" ? node.nodes : []))),
+      css: toObject(marker.nodes, selector),
     };
   });
 

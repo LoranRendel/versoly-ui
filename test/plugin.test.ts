@@ -141,6 +141,26 @@ describe("compiled CSS", () => {
 
     expect(css).not.toContain("@apply");
   });
+
+  // A rule that is nothing but variants compiles to `.tr:nth-child(even) { … }` / `@media (hover: hover) { .tr:hover … }`:
+  // the condition has to be kept, not only the declarations.
+  it("keeps the variants of rules made only of variants", async () => {
+    const css = await build(plugin(), [
+      "table",
+      "table-striped",
+      "table-hover",
+      "navbar-dark",
+      "navbar-btn",
+      "text-dark",
+    ]);
+
+    expect(hasRule(css, ".table-striped > tbody > tr:nth-child(even)")).toBe(true);
+    expect(hasRule(css, ".table-striped > tbody > tr")).toBe(false);
+    expect(css).toMatch(/@media \(hover: hover\) \{\s*\.table-hover > tbody > tr:hover \{\s*background-color/);
+    expect(css).toMatch(/@media \(hover: hover\) \{\s*html :where\(a\.text-dark\):hover \{\s*color/);
+    expect(hasRule(css, ".navbar-dark .navbar-btn:focus")).toBe(true);
+    expect(hasRule(css, ".navbar-dark .navbar-btn")).toBe(false);
+  });
 });
 
 describe("variables", () => {
